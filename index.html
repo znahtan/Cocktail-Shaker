@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cocktail Shaker Sort Visualizer</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #101418;
+    --panel: #181e24;
+    --line: #35424a;
+    --text: #f3f5f6;
+    --muted: #afbec8;
+    --neutral: #849db2;
+    --compare: #ffcf70;
+    --swap: #ffa78a;
+    --sorted: #7ee0ba;
+    font-family: system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  main { width: min(960px, calc(100% - 28px)); margin: clamp(24px, 5vw, 58px) auto; }
+  .eyebrow, .phase { font: 700 .76rem ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+  .eyebrow { color: var(--sorted); }
+  h1 { margin: .26em 0 .2em; font-size: clamp(2rem, 6vw, 3.65rem); line-height: 1.05; letter-spacing: -.045em; }
+  .intro { margin: 0 0 24px; color: var(--muted); }
+  .panel { padding: clamp(14px, 3vw, 26px); background: var(--panel); border: 1px solid var(--line); border-radius: 20px; }
+  .top, .controls, .legend, .scrubber { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+  .top { justify-content: space-between; }
+  .phase { color: var(--compare); }
+  .tally, .legend, .hint { color: var(--muted); font-size: .86rem; }
+  .chart { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: clamp(4px, 1.2vw, 13px); margin: 14px 0; }
+  .slot { min-width: 0; text-align: center; }
+  .track {
+    position: relative; height: clamp(146px, 26vw, 250px); display: flex; align-items: end;
+    border-radius: 10px 10px 3px 3px;
+    border-bottom: 2px solid var(--line);
+    background: repeating-linear-gradient(to top, transparent 0 calc(12.5% - 1px), #303b445c calc(12.5% - 1px) 12.5%);
+  }
+  .bar {
+    position: relative; z-index: 1; display: grid; align-content: start; place-items: center;
+    width: 100%; padding-top: 3px; border-radius: 8px 8px 1px 1px;
+    background: var(--neutral); color: #101418; font-size: clamp(.95rem, 3vw, 1.5rem); font-weight: 800;
+    line-height: 1.05;
+  }
+  .bar.comparing { background: var(--compare); }
+  .bar.swapping { background: var(--swap); }
+  .bar.sorted { background: var(--sorted); }
+  .index { display: block; margin-top: 5px; color: var(--muted); font: .76rem ui-monospace, monospace; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--key); }
+  .explain { margin: 18px 0; padding: 12px 14px; border-left: 3px solid var(--compare); border-radius: 4px 10px 10px 4px; background: #101418; min-height: 108px; }
+  .explain h2 { margin: 0; font-size: 1.02rem; }
+  .explain p { margin: 5px 0 0; color: var(--muted); line-height: 1.4; }
+  code { font-family: ui-monospace, monospace; }
+  #condition { color: var(--text); }
+  .controls { gap: 8px; }
+  button, select { min-height: 42px; padding: 7px 13px; color: var(--text); background: #25313a; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:hover:enabled { border-color: var(--muted); }
+  button.primary { background: var(--sorted); color: #101418; font-weight: 750; }
+  :focus-visible { outline: 2px solid var(--compare); outline-offset: 3px; }
+  .speed { margin-left: auto; color: var(--muted); font-size: .86rem; }
+  .scrubber { margin-top: 15px; }
+  .scrubber label { min-width: 94px; font: .82rem ui-monospace, monospace; }
+  input[type="range"] { flex: 1; min-width: 100px; accent-color: var(--sorted); }
+  .hint { margin: 12px 0 0; }
+  kbd { padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Sorting visualization</div>
+    <h1>Cocktail Shaker Sort</h1>
+    <p class="intro">Watch eight numbers move into ascending order as the algorithm scans left to right, then right to left.</p>
+  </header>
+  <section class="panel" aria-label="Interactive sorting walkthrough">
+    <div class="top">
+      <span class="phase" id="phase"></span>
+      <span class="tally" id="tally"></span>
+    </div>
+    <div class="chart" id="chart" role="img" aria-label="Array"></div>
+    <div class="legend" aria-label="Color legend">
+      <span><i style="--key: var(--neutral)"></i> Active range</span>
+      <span><i style="--key: var(--compare)"></i> Comparing</span>
+      <span><i style="--key: var(--swap)"></i> Swapped</span>
+      <span><i style="--key: var(--sorted)"></i> Final position</span>
+    </div>
+    <div class="explain" aria-live="polite" aria-atomic="true">
+      <h2 id="step-title"></h2>
+      <p><code id="condition"></code></p>
+      <p id="detail"></p>
+    </div>
+    <div class="controls">
+      <button id="reset" type="button">Reset</button>
+      <button id="previous" type="button">← Previous</button>
+      <button id="play" class="primary" type="button">Play</button>
+      <button id="next" type="button">Next →</button>
+      <label class="speed">Speed
+        <select id="speed">
+          <option value="2100">Slow</option>
+          <option value="1200" selected>Normal</option>
+          <option value="600">Fast</option>
+        </select>
+      </label>
+    </div>
+    <div class="scrubber">
+      <label for="seek" id="step-count"></label>
+      <input id="seek" type="range" min="0" value="0">
+    </div>
+    <p class="hint">Use <kbd>←</kbd> and <kbd>→</kbd> to step through comparisons.</p>
+  </section>
+</main>
+<script>
+  const dataset = [8, 3, 6, 2, 7, 1, 5, 4];
+
+  function makeTrace(input) {
+    const values = [...input];
+    const frames = [];
+    let start = 0;
+    let end = values.length - 1;
+    let comparisons = 0;
+    let swaps = 0;
+
+    function record(phase, title, condition, detail, pair = [], exchanged = false) {
+      frames.push({
+        values: [...values], start, end, comparisons, swaps,
+        phase, title, condition, detail, pair, exchanged
+      });
+    }
+
+    record('Ready to sort', 'Start with eight values', '',
+      'Press Next to compare the first pair, or Play to watch the full sort.');
+
+    for (let round = 1; start < end; round++) {
+      for (const forward of [true, false]) {
+        if (start >= end) break;
+        const phase = forward ? 'Forward →' : '← Backward';
+        const label = `Round ${round} · ${phase}`;
+        const first = forward ? start : end - 1;
+        const limit = forward ? end : start - 1;
+        const direction = forward ? 1 : -1;
+        const swapsBefore = swaps;
+
+        for (let left = first; left !== limit; left += direction) {
+          const right = left + 1;
+          const a = values[left];
+          const b = values[right];
+          const exchange = a > b;
+          const rule = forward ? 'arr[i] > arr[i + 1]' : 'arr[i] < arr[i - 1]';
+          const test = forward ? `${a} > ${b}` : `${b} < ${a}`;
+          comparisons++;
+          if (exchange) {
+            [values[left], values[right]] = [b, a];
+            swaps++;
+          }
+
+          const detail = exchange
+            ? `${a} and ${b} trade places. The smaller value moves left.`
+            : `${a} and ${b} stay in place. They are already in ascending order.`;
+
+          record(label, `Compare ${a} and ${b}`, `${rule}  ·  ${test} → ${exchange ? 'true' : 'false'}`,
+            `${exchange ? 'Swap' : 'No swap'}. ${detail}`, [left, right], exchange);
+        }
+
+        if (swaps === swapsBefore) {
+          start = values.length;
+          record('Complete', `No swaps in the ${forward ? 'forward' : 'backward'} pass`, 'swapped = false → stop',
+            `Every neighboring pair in the active range is in order. Final output [${values.join(', ')}].`);
+          return frames;
+        }
+
+        const fixed = forward ? end-- : start++;
+        record(label, `${values[fixed]} is in its final position`, forward ? 'end moves one position left' : 'start moves one position right',
+          `The ${forward ? 'largest' : 'smallest'} value in this pass reached the ${forward ? 'right' : 'left'} edge of the active range.`);
+      }
+    }
+
+    start = values.length;
+    record('Complete', 'The active range has at most one value left', 'start >= end → stop',
+      `Final output [${values.join(', ')}].`);
+    return frames;
+  }
+
+  const frames = makeTrace(dataset);
+  const last = frames.length - 1;
+  const get = id => document.getElementById(id);
+  const chart = get('chart');
+  const play = get('play');
+  const seek = get('seek');
+  const speed = get('speed');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let position = 0;
+  let timer = null;
+
+  seek.max = last;
+
+  function render(animate = false) {
+    const frame = frames[position];
+    const oldPositions = new Map();
+    if (animate && !reduceMotion.matches) {
+      for (const bar of chart.querySelectorAll('.bar')) {
+        oldPositions.set(bar.dataset.value, bar.getBoundingClientRect().left);
+      }
+    }
+    chart.replaceChildren(...frame.values.map((value, index) => {
+      const slot = document.createElement('div');
+      const track = document.createElement('div');
+      const bar = document.createElement('div');
+      const caption = document.createElement('span');
+      slot.className = 'slot';
+      track.className = 'track';
+      bar.className = 'bar';
+      bar.dataset.value = value;
+      bar.style.height = `${value / 8 * 100}%`;
+      bar.textContent = value;
+      caption.className = 'index';
+      caption.textContent = index;
+      if (index < frame.start || index > frame.end) bar.classList.add('sorted');
+      if (frame.pair.includes(index)) bar.classList.add(frame.exchanged ? 'swapping' : 'comparing');
+      track.append(bar);
+      slot.append(track, caption);
+      return slot;
+    }));
+
+    for (const bar of chart.querySelectorAll('.bar')) {
+      const oldLeft = oldPositions.get(bar.dataset.value);
+      if (oldLeft === undefined) continue;
+      const offset = oldLeft - bar.getBoundingClientRect().left;
+      if (offset) bar.animate(
+        [{ transform: `translateX(${offset}px)` }, { transform: 'translateX(0)' }],
+        { duration: 300, easing: 'ease-out' }
+      );
+    }
+
+    chart.setAttribute('aria-label', `Array [${frame.values.join(', ')}]`);
+    get('phase').textContent = frame.phase;
+    get('tally').textContent = `${frame.comparisons} comparisons · ${frame.swaps} swaps`;
+    get('step-title').textContent = frame.title;
+    get('condition').textContent = frame.condition;
+    get('detail').textContent = frame.detail;
+    get('step-count').textContent = `Step ${position} / ${last}`;
+    seek.value = position;
+    seek.setAttribute('aria-valuetext', `Step ${position} of ${last}`);
+    get('reset').disabled = position === 0 && timer === null;
+    get('previous').disabled = position === 0;
+    get('next').disabled = position === last;
+    play.textContent = timer !== null ? 'Pause' : position === last ? 'Replay' : 'Play';
+  }
+
+  function pause() {
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function show(step, animate = false) {
+    position = Math.max(0, Math.min(last, step));
+    render(animate);
+  }
+
+  function move(delta) {
+    pause();
+    show(position + delta, true);
+  }
+
+  function schedule() {
+    timer = setTimeout(() => {
+      if (position + 1 === last) pause();
+      else schedule();
+      show(position + 1, true);
+    }, Number(speed.value));
+  }
+
+  get('reset').addEventListener('click', () => {
+    pause();
+    show(0);
+  });
+  get('previous').addEventListener('click', () => move(-1));
+  get('next').addEventListener('click', () => move(1));
+  play.addEventListener('click', () => {
+    if (timer !== null) {
+      pause();
+      render();
+    } else {
+      schedule();
+      show(position === last ? 0 : position);
+    }
+  });
+  speed.addEventListener('change', () => {
+    if (timer !== null) {
+      pause();
+      schedule();
+    }
+  });
+  seek.addEventListener('input', () => {
+    pause();
+    show(Number(seek.value));
+  });
+  document.addEventListener('keydown', event => {
+    if (event.target.matches('input, select') || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    move(event.key === 'ArrowLeft' ? -1 : 1);
+  });
+
+  render();
+</script>
+</body>
+</html>
